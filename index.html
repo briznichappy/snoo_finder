@@ -1,0 +1,777 @@
+<!DOCTYPE html>
+<html lang="sr">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Net Monitor — lokalni uređaji</title>
+<style>
+  :root {
+    --bg: #0c0f14;
+    --bg-grid: #11151c;
+    --surface: #151a22;
+    --surface-2: #1b212b;
+    --border: #232b36;
+    --border-strong: #2e3845;
+    --text: #e7edf3;
+    --text-muted: #8b97a6;
+    --text-faint: #5b6675;
+    --up: #38d39f;
+    --up-dim: rgba(56, 211, 159, 0.12);
+    --down: #f4636b;
+    --down-dim: rgba(244, 99, 107, 0.12);
+    --check: #e8b14a;
+    --check-dim: rgba(232, 177, 74, 0.12);
+    --unknown: #5b6675;
+    --mono: ui-monospace, "SF Mono", "Menlo", "Cascadia Code", "Consolas", monospace;
+    --sans: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
+  }
+
+  * { box-sizing: border-box; margin: 0; padding: 0; }
+
+  html, body { height: 100%; }
+
+  body {
+    background: var(--bg);
+    background-image:
+      linear-gradient(var(--bg-grid) 1px, transparent 1px),
+      linear-gradient(90deg, var(--bg-grid) 1px, transparent 1px);
+    background-size: 44px 44px;
+    color: var(--text);
+    font-family: var(--sans);
+    min-height: 100vh;
+    -webkit-font-smoothing: antialiased;
+  }
+
+  /* ---- Top bar ---- */
+  .topbar {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    padding: 18px 24px;
+    border-bottom: 1px solid var(--border);
+    background: rgba(12, 15, 20, 0.72);
+    backdrop-filter: blur(8px);
+    position: sticky;
+    top: 0;
+    z-index: 20;
+  }
+  .brand {
+    display: flex;
+    align-items: center;
+    gap: 12px;
+  }
+  .brand .pulse-dot {
+    width: 10px; height: 10px; border-radius: 50%;
+    background: var(--up);
+    box-shadow: 0 0 0 0 var(--up);
+    animation: beacon 2.4s ease-out infinite;
+  }
+  @keyframes beacon {
+    0% { box-shadow: 0 0 0 0 rgba(56,211,159,0.5); }
+    70% { box-shadow: 0 0 0 9px rgba(56,211,159,0); }
+    100% { box-shadow: 0 0 0 0 rgba(56,211,159,0); }
+  }
+  .brand h1 {
+    font-family: var(--mono);
+    font-size: 14px;
+    font-weight: 600;
+    letter-spacing: 0.14em;
+    text-transform: uppercase;
+    color: var(--text);
+  }
+  .brand .tag {
+    font-family: var(--mono);
+    font-size: 11px;
+    color: var(--text-faint);
+    letter-spacing: 0.1em;
+  }
+  .topbar-right { display: flex; align-items: center; gap: 18px; }
+  .summary {
+    font-family: var(--mono);
+    font-size: 12px;
+    color: var(--text-muted);
+    letter-spacing: 0.04em;
+    display: flex;
+    gap: 14px;
+  }
+  .summary b { color: var(--up); font-weight: 600; }
+  .summary .bad { color: var(--down); }
+
+  /* ---- Buttons ---- */
+  .btn {
+    font-family: var(--sans);
+    font-size: 13px;
+    font-weight: 600;
+    border: 1px solid var(--border-strong);
+    background: var(--surface-2);
+    color: var(--text);
+    padding: 9px 16px;
+    border-radius: 8px;
+    cursor: pointer;
+    transition: border-color .15s, background .15s, transform .05s;
+    display: inline-flex;
+    align-items: center;
+    gap: 8px;
+  }
+  .btn:hover { border-color: var(--up); background: #20272f; }
+  .btn:active { transform: translateY(1px); }
+  .btn-primary {
+    background: var(--up);
+    color: #04140e;
+    border-color: var(--up);
+  }
+  .btn-primary:hover { background: #46e3ad; border-color: #46e3ad; }
+  .btn .plus { font-size: 16px; line-height: 1; }
+  .btn:focus-visible { outline: 2px solid var(--up); outline-offset: 2px; }
+
+  /* ---- Empty state ---- */
+  .empty {
+    min-height: calc(100vh - 61px);
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+    text-align: center;
+    padding: 24px;
+    gap: 22px;
+  }
+  .empty .radar {
+    width: 120px; height: 120px;
+    border-radius: 50%;
+    border: 1px solid var(--border-strong);
+    position: relative;
+    display: grid;
+    place-items: center;
+  }
+  .empty .radar::before,
+  .empty .radar::after {
+    content: "";
+    position: absolute;
+    inset: 0;
+    border-radius: 50%;
+    border: 1px solid var(--up);
+    opacity: 0;
+    animation: sweep 3s ease-out infinite;
+  }
+  .empty .radar::after { animation-delay: 1.5s; }
+  @keyframes sweep {
+    0% { transform: scale(0.3); opacity: 0.6; }
+    100% { transform: scale(1.05); opacity: 0; }
+  }
+  .empty .radar .core {
+    width: 10px; height: 10px; border-radius: 50%;
+    background: var(--up);
+  }
+  .empty h2 {
+    font-family: var(--mono);
+    font-size: 18px;
+    font-weight: 600;
+    letter-spacing: 0.04em;
+  }
+  .empty p {
+    color: var(--text-muted);
+    font-size: 14px;
+    max-width: 380px;
+    line-height: 1.6;
+  }
+
+  /* ---- Grid of devices ---- */
+  .grid {
+    display: grid;
+    grid-template-columns: repeat(auto-fill, minmax(280px, 1fr));
+    gap: 16px;
+    padding: 24px;
+    max-width: 1400px;
+    margin: 0 auto;
+  }
+
+  .card {
+    background: var(--surface);
+    border: 1px solid var(--border);
+    border-left: 3px solid var(--unknown);
+    border-radius: 12px;
+    padding: 18px;
+    position: relative;
+    overflow: hidden;
+    transition: border-color .25s, box-shadow .25s, background .25s;
+  }
+  .card.up { border-left-color: var(--up); }
+  .card.up.live { box-shadow: 0 0 0 1px var(--up-dim), 0 8px 24px -12px rgba(56,211,159,0.3); }
+  .card.down { border-left-color: var(--down); background: linear-gradient(180deg, var(--surface), rgba(244,99,107,0.04)); }
+  .card.checking { border-left-color: var(--check); }
+
+  .card-head {
+    display: flex;
+    align-items: flex-start;
+    justify-content: space-between;
+    gap: 10px;
+    margin-bottom: 16px;
+    padding-right: 64px;
+  }
+  .card-name {
+    font-size: 16px;
+    font-weight: 600;
+    letter-spacing: 0.01em;
+    word-break: break-word;
+  }
+  .card-url {
+    font-family: var(--mono);
+    font-size: 12px;
+    color: var(--text-faint);
+    margin-top: 3px;
+    word-break: break-all;
+  }
+
+  .status-light {
+    flex-shrink: 0;
+    position: relative;
+    width: 11px; height: 11px;
+  }
+  .status-light .dot {
+    position: absolute; inset: 0;
+    border-radius: 50%;
+    background: var(--unknown);
+    transition: background .25s;
+  }
+  .card.up .status-light .dot { background: var(--up); }
+  .card.down .status-light .dot { background: var(--down); }
+  .card.checking .status-light .dot { background: var(--check); }
+
+  /* ping ripple when checking */
+  .card.checking .status-light::after {
+    content: "";
+    position: absolute; inset: 0;
+    border-radius: 50%;
+    border: 1.5px solid var(--check);
+    animation: ripple 1s ease-out infinite;
+  }
+  @keyframes ripple {
+    0% { transform: scale(1); opacity: 0.7; }
+    100% { transform: scale(2.6); opacity: 0; }
+  }
+
+  .card-foot {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 8px;
+    border-top: 1px solid var(--border);
+    padding-top: 12px;
+  }
+  .stat {
+    font-family: var(--mono);
+    font-size: 11px;
+    letter-spacing: 0.06em;
+    text-transform: uppercase;
+  }
+  .stat .label { color: var(--text-faint); }
+  .stat .value { color: var(--text-muted); }
+  .card.up .state-text { color: var(--up); }
+  .card.down .state-text { color: var(--down); }
+  .card.checking .state-text { color: var(--check); }
+  .state-text { font-family: var(--mono); font-size: 12px; font-weight: 600; letter-spacing: 0.08em; }
+  .state { display: flex; align-items: center; gap: 9px; }
+
+  .card-actions {
+    position: absolute;
+    top: 12px; right: 12px;
+    display: flex;
+    gap: 6px;
+    opacity: 0;
+    transition: opacity .15s;
+  }
+  .icon-btn {
+    width: 26px; height: 26px;
+    border-radius: 6px;
+    border: 1px solid var(--border-strong);
+    background: var(--surface-2);
+    color: var(--text-muted);
+    cursor: pointer;
+    font-size: 12px;
+    display: grid; place-items: center;
+    line-height: 1;
+  }
+  .icon-btn:hover { color: var(--text); border-color: var(--text-muted); }
+  .icon-btn.danger:hover { color: var(--down); border-color: var(--down); }
+  .icon-btn:focus-visible { outline: 2px solid var(--up); outline-offset: 1px; }
+  .card:hover .card-actions, .card:focus-within .card-actions { opacity: 1; }
+
+  .trust-row {
+    display: none;
+    width: 100%;
+    margin-top: 12px;
+    padding: 9px 12px;
+    border: 1px dashed var(--down);
+    background: var(--down-dim);
+    border-radius: 8px;
+    color: var(--down);
+    font-family: var(--mono);
+    font-size: 11.5px;
+    letter-spacing: 0.02em;
+    text-align: left;
+    cursor: pointer;
+    transition: background .15s;
+  }
+  .trust-row b { font-weight: 600; }
+  .trust-row:hover { background: rgba(244, 99, 107, 0.2); }
+  .trust-row:focus-visible { outline: 2px solid var(--down); outline-offset: 2px; }
+  .card.down .trust-row { display: block; }
+
+  .meta-row { display: flex; gap: 18px; margin-bottom: 14px; }
+
+  /* ---- Modal ---- */
+  .overlay {
+    position: fixed; inset: 0;
+    background: rgba(6, 8, 11, 0.7);
+    backdrop-filter: blur(3px);
+    display: none;
+    align-items: center;
+    justify-content: center;
+    z-index: 50;
+    padding: 20px;
+  }
+  .overlay.open { display: flex; }
+  .modal {
+    background: var(--surface);
+    border: 1px solid var(--border-strong);
+    border-radius: 14px;
+    width: 100%;
+    max-width: 420px;
+    padding: 26px;
+    box-shadow: 0 24px 60px -20px rgba(0,0,0,0.6);
+  }
+  .modal h3 {
+    font-family: var(--mono);
+    font-size: 15px;
+    letter-spacing: 0.08em;
+    text-transform: uppercase;
+    margin-bottom: 20px;
+  }
+  .field { margin-bottom: 16px; }
+  .field label {
+    display: block;
+    font-family: var(--mono);
+    font-size: 11px;
+    letter-spacing: 0.08em;
+    text-transform: uppercase;
+    color: var(--text-muted);
+    margin-bottom: 7px;
+  }
+  .field input {
+    width: 100%;
+    background: var(--bg);
+    border: 1px solid var(--border-strong);
+    border-radius: 8px;
+    padding: 11px 13px;
+    color: var(--text);
+    font-family: var(--mono);
+    font-size: 13px;
+    transition: border-color .15s;
+  }
+  .field input:focus { outline: none; border-color: var(--up); }
+  .field .hint { font-size: 11px; color: var(--text-faint); margin-top: 6px; }
+  .field .err { font-size: 11px; color: var(--down); margin-top: 6px; display: none; }
+  .field.invalid input { border-color: var(--down); }
+  .field.invalid .err { display: block; }
+
+  .url-group {
+    display: flex;
+    align-items: stretch;
+    background: var(--bg);
+    border: 1px solid var(--border-strong);
+    border-radius: 8px;
+    overflow: hidden;
+    transition: border-color .15s;
+  }
+  .url-group:focus-within { border-color: var(--up); }
+  .field.invalid .url-group { border-color: var(--down); }
+  .url-group .affix {
+    display: flex;
+    align-items: center;
+    padding: 0 11px;
+    font-family: var(--mono);
+    font-size: 13px;
+    color: var(--text-faint);
+    background: var(--surface-2);
+    white-space: nowrap;
+    user-select: none;
+  }
+  .url-group input {
+    width: 100%;
+    border: none;
+    background: transparent;
+    border-radius: 0;
+    padding: 11px 12px;
+    color: var(--text);
+    font-family: var(--mono);
+    font-size: 13px;
+    min-width: 0;
+  }
+  .url-group input:focus { outline: none; }
+
+  .modal-actions { display: flex; justify-content: flex-end; gap: 10px; margin-top: 24px; }
+
+  @media (max-width: 540px) {
+    .summary { display: none; }
+    .grid { padding: 16px; gap: 12px; }
+    .brand .tag { display: none; }
+  }
+
+  @media (prefers-reduced-motion: reduce) {
+    *, *::before, *::after { animation: none !important; }
+  }
+</style>
+</head>
+<body>
+  <header class="topbar">
+    <div class="brand">
+      <span class="pulse-dot"></span>
+      <div>
+        <h1>Net Monitor</h1>
+        <div class="tag">lokalna mreža · /status</div>
+      </div>
+    </div>
+    <div class="topbar-right">
+      <div class="summary" id="summary"></div>
+      <button class="btn btn-primary" id="addBtnCorner" style="display:none">
+        <span class="plus">+</span> Dodaj uređaj
+      </button>
+    </div>
+  </header>
+
+  <main id="main"></main>
+
+  <!-- Add device modal -->
+  <div class="overlay" id="overlay">
+    <div class="modal" role="dialog" aria-modal="true" aria-labelledby="modalTitle">
+      <h3 id="modalTitle">Novi uređaj</h3>
+      <div class="field" id="fieldName">
+        <label for="inName">Ime</label>
+        <input type="text" id="inName" placeholder="npr. Senzor u kuhinji" autocomplete="off">
+        <div class="err">Unesi ime uređaja.</div>
+      </div>
+      <div class="field" id="fieldUrl">
+        <label for="inUrl">Adresa uređaja</label>
+        <div class="url-group" id="urlGroup">
+          <span class="affix">https://</span>
+          <input type="text" id="inUrl" placeholder="192.168.1.50" autocomplete="off" inputmode="decimal">
+          <span class="affix">:8443</span>
+        </div>
+        <div class="hint">Proverava se <span id="urlPreview">https://…:8443</span>/status na svakih 5s.</div>
+        <div class="err">Unesi ispravnu IPv4 adresu (npr. 192.168.1.50).</div>
+      </div>
+      <div class="modal-actions">
+        <button class="btn" id="cancelBtn">Otkaži</button>
+        <button class="btn btn-primary" id="saveBtn">Sačuvaj</button>
+      </div>
+    </div>
+  </div>
+
+<script>
+(function () {
+  "use strict";
+
+  var STORAGE_KEY = "net-monitor-devices-v1";
+  var PING_INTERVAL = 5000;
+  var PING_TIMEOUT = 4000;
+
+  /** @type {Array<{id:string,name:string,baseUrl:string,status:string,latency:number|null,lastCheck:number|null}>} */
+  var devices = [];
+
+  // ---------- persistence ----------
+  function load() {
+    try {
+      var raw = localStorage.getItem(STORAGE_KEY);
+      if (raw) {
+        devices = JSON.parse(raw).map(function (d) {
+          return {
+            id: d.id,
+            name: d.name,
+            baseUrl: d.baseUrl,
+            status: "unknown",
+            latency: null,
+            lastCheck: null
+          };
+        });
+      }
+    } catch (e) {
+      devices = [];
+    }
+  }
+
+  function save() {
+    try {
+      localStorage.setItem(STORAGE_KEY, JSON.stringify(devices.map(function (d) {
+        return { id: d.id, name: d.name, baseUrl: d.baseUrl };
+      })));
+    } catch (e) { /* storage may be unavailable */ }
+  }
+
+  // ---------- helpers ----------
+  function uid() {
+    return "d" + Date.now().toString(36) + Math.random().toString(36).slice(2, 6);
+  }
+  function normalizeUrl(u) {
+    return u.trim().replace(/\/+$/, "");
+  }
+  // korisnik kuca samo adresu; http:// i :8443 su fiksni
+  function sanitizeHost(h) {
+    return h.trim()
+      .replace(/^https?:\/\//i, "")  // skini šemu ako je nalepio
+      .replace(/\/.*$/, "")          // skini putanju
+      .replace(/:\d+$/, "")          // skini bilo koji port koji je ukucao
+      .trim();
+  }
+  function buildBaseUrl(host) {
+    return "https://" + sanitizeHost(host) + ":8443";
+  }
+  function isValidIPv4(s) {
+    var m = /^(\d{1,3})\.(\d{1,3})\.(\d{1,3})\.(\d{1,3})$/.exec(s.trim());
+    if (!m) return false;
+    for (var i = 1; i <= 4; i++) {
+      var o = Number(m[i]);
+      if (o > 255) return false;
+      if (m[i].length > 1 && m[i][0] === "0") return false; // bez vodećih nula
+    }
+    return true;
+  }
+  function timeAgo(ts) {
+    if (!ts) return "—";
+    var s = Math.round((Date.now() - ts) / 1000);
+    if (s < 5) return "upravo sad";
+    if (s < 60) return "pre " + s + "s";
+    var m = Math.round(s / 60);
+    return "pre " + m + "min";
+  }
+  function escapeHtml(s) {
+    return String(s).replace(/[&<>"']/g, function (c) {
+      return { "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" }[c];
+    });
+  }
+
+  // ---------- ping ----------
+  // no-cors reachability check: ako fetch ne baci grešku -> uređaj odgovara.
+  // Provera je tiha — status se ne menja dok traje, ostaje up/down.
+  function pingDevice(device) {
+    var url = normalizeUrl(device.baseUrl) + "/status";
+    var controller = new AbortController();
+    var timer = setTimeout(function () { controller.abort(); }, PING_TIMEOUT);
+    var start = performance.now();
+
+    fetch(url, {
+      method: "GET",
+      mode: "no-cors",
+      cache: "no-store",
+      signal: controller.signal
+    }).then(function () {
+      clearTimeout(timer);
+      device.latency = Math.round(performance.now() - start);
+      setStatus(device, "up");
+    }).catch(function () {
+      clearTimeout(timer);
+      device.latency = null;
+      setStatus(device, "down");
+    });
+  }
+
+  function setStatus(device, status) {
+    var changed = device.status !== status;
+    device.status = status;
+    device.lastCheck = Date.now();
+    updateCard(device, changed);
+    renderSummary();
+  }
+
+  function pingAll() {
+    devices.forEach(pingDevice);
+  }
+
+  // ---------- rendering ----------
+  var main = document.getElementById("main");
+  var summaryEl = document.getElementById("summary");
+  var cornerBtn = document.getElementById("addBtnCorner");
+
+  function render() {
+    if (devices.length === 0) {
+      cornerBtn.style.display = "none";
+      main.innerHTML =
+        '<div class="empty">' +
+          '<div class="radar"><div class="core"></div></div>' +
+          '<h2>Nema dodatih uređaja</h2>' +
+          '<p>Dodaj uređaj sa lokalne mreže da bi pratio njegov status. Proveravaću ga na svakih 5 sekundi.</p>' +
+          '<button class="btn btn-primary" id="addBtnCenter"><span class="plus">+</span> Dodaj uređaj</button>' +
+        '</div>';
+      document.getElementById("addBtnCenter").addEventListener("click", openModal);
+    } else {
+      cornerBtn.style.display = "inline-flex";
+      var html = '<div class="grid">';
+      devices.forEach(function (d) { html += cardHtml(d); });
+      html += "</div>";
+      main.innerHTML = html;
+      devices.forEach(bindCardActions);
+    }
+    renderSummary();
+  }
+
+  function cardHtml(d) {
+    var stateLabels = { up: "ONLINE", down: "OFFLINE", checking: "PROVERA…", unknown: "—" };
+    return (
+      '<div class="card ' + d.status + '" id="card-' + d.id + '">' +
+        '<div class="card-actions">' +
+          '<button class="icon-btn" data-act="open" data-id="' + d.id + '" title="Otvori /status u novom tabu">↗</button>' +
+          '<button class="icon-btn" data-act="ping" data-id="' + d.id + '" title="Proveri odmah">↻</button>' +
+          '<button class="icon-btn danger" data-act="del" data-id="' + d.id + '" title="Obriši">✕</button>' +
+        '</div>' +
+        '<div class="card-head">' +
+          '<div>' +
+            '<div class="card-name">' + escapeHtml(d.name) + '</div>' +
+            '<div class="card-url">' + escapeHtml(normalizeUrl(d.baseUrl)) + '/status</div>' +
+          '</div>' +
+        '</div>' +
+        '<div class="card-foot">' +
+          '<span class="state">' +
+            '<span class="status-light"><span class="dot"></span></span>' +
+            '<span class="state-text">' + stateLabels[d.status] + '</span>' +
+          '</span>' +
+          '<span class="stat"><span class="label">' +
+            (d.latency != null ? d.latency + "ms · " : "") +
+          '</span><span class="value">' + timeAgo(d.lastCheck) + '</span></span>' +
+        '</div>' +
+        '<button class="trust-row" data-act="open" data-id="' + d.id + '">' +
+          'Otvori <b>/status</b> i prihvati sertifikat ↗' +
+        '</button>' +
+      '</div>'
+    );
+  }
+
+  function updateCard(d, justChanged) {
+    var el = document.getElementById("card-" + d.id);
+    if (!el) return;
+    el.className = "card " + d.status;
+    if (justChanged && d.status === "up") {
+      el.classList.add("live");
+      setTimeout(function () { el.classList.remove("live"); }, 600);
+    }
+    var stateLabels = { up: "ONLINE", down: "OFFLINE", checking: "PROVERA…", unknown: "—" };
+    el.querySelector(".state-text").textContent = stateLabels[d.status];
+    var statEl = el.querySelector(".stat");
+    statEl.innerHTML =
+      '<span class="label">' + (d.latency != null ? d.latency + "ms · " : "") + '</span>' +
+      '<span class="value">' + timeAgo(d.lastCheck) + '</span>';
+  }
+
+  function bindCardActions(d) {
+    var el = document.getElementById("card-" + d.id);
+    if (!el) return;
+    el.querySelectorAll("[data-act]").forEach(function (btn) {
+      btn.addEventListener("click", function () {
+        var id = btn.getAttribute("data-id");
+        var dev = devices.find(function (x) { return x.id === id; });
+        if (!dev) return;
+        var act = btn.getAttribute("data-act");
+        if (act === "ping") pingDevice(dev);
+        else if (act === "open") window.open(normalizeUrl(dev.baseUrl) + "/status", "_blank", "noopener");
+        else removeDevice(id);
+      });
+    });
+  }
+
+  function renderSummary() {
+    if (devices.length === 0) { summaryEl.innerHTML = ""; return; }
+    var up = devices.filter(function (d) { return d.status === "up"; }).length;
+    var down = devices.filter(function (d) { return d.status === "down"; }).length;
+    summaryEl.innerHTML =
+      '<span><b>' + up + '</b> online</span>' +
+      '<span class="bad">' + down + ' offline</span>' +
+      '<span style="color:var(--text-faint)">' + devices.length + ' ukupno</span>';
+  }
+
+  function removeDevice(id) {
+    devices = devices.filter(function (d) { return d.id !== id; });
+    save();
+    render();
+  }
+
+  // ---------- modal ----------
+  var overlay = document.getElementById("overlay");
+  var inName = document.getElementById("inName");
+  var inUrl = document.getElementById("inUrl");
+  var fieldName = document.getElementById("fieldName");
+  var fieldUrl = document.getElementById("fieldUrl");
+  var urlPreview = document.getElementById("urlPreview");
+
+  function openModal() {
+    inName.value = "";
+    inUrl.value = "";
+    fieldName.classList.remove("invalid");
+    fieldUrl.classList.remove("invalid");
+    urlPreview.textContent = "https://…:8443";
+    overlay.classList.add("open");
+    setTimeout(function () { inName.focus(); }, 30);
+  }
+  function closeModal() { overlay.classList.remove("open"); }
+
+  inUrl.addEventListener("input", function () {
+    // forsiraj IPv4 format: dozvoli samo cifre i tačke
+    var cleaned = inUrl.value.replace(/[^0-9.]/g, "");
+    if (cleaned !== inUrl.value) inUrl.value = cleaned;
+    var h = cleaned.trim();
+    urlPreview.textContent = h ? "https://" + h + ":8443" : "https://…:8443";
+    if (h && isValidIPv4(h)) fieldUrl.classList.remove("invalid");
+  });
+
+  function saveDevice() {
+    var name = inName.value.trim();
+    var host = sanitizeHost(inUrl.value);
+    var ok = true;
+    if (!name) { fieldName.classList.add("invalid"); ok = false; }
+    else fieldName.classList.remove("invalid");
+    if (!isValidIPv4(host)) { fieldUrl.classList.add("invalid"); ok = false; }
+    else fieldUrl.classList.remove("invalid");
+    if (!ok) return;
+
+    var device = {
+      id: uid(),
+      name: name,
+      baseUrl: buildBaseUrl(host),
+      status: "unknown",
+      latency: null,
+      lastCheck: null
+    };
+    devices.push(device);
+    save();
+    closeModal();
+    render();
+    pingDevice(device);
+  }
+
+  // ---------- events ----------
+  document.getElementById("addBtnCorner").addEventListener("click", openModal);
+  document.getElementById("saveBtn").addEventListener("click", saveDevice);
+  document.getElementById("cancelBtn").addEventListener("click", closeModal);
+  overlay.addEventListener("click", function (e) { if (e.target === overlay) closeModal(); });
+  document.addEventListener("keydown", function (e) {
+    if (e.key === "Escape" && overlay.classList.contains("open")) closeModal();
+    if (e.key === "Enter" && overlay.classList.contains("open")) saveDevice();
+  });
+
+  // refresh "time ago" labels every few seconds without re-pinging
+  setInterval(function () {
+    devices.forEach(function (d) {
+      var el = document.getElementById("card-" + d.id);
+      if (el) {
+        var v = el.querySelector(".stat .value");
+        if (v) v.textContent = timeAgo(d.lastCheck);
+      }
+    });
+  }, 3000);
+
+  // ---------- boot ----------
+  load();
+  render();
+  if (devices.length) pingAll();
+  setInterval(pingAll, PING_INTERVAL);
+})();
+</script>
+</body>
+</html>
